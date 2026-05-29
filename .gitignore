@@ -1,0 +1,29 @@
+# Checkpoints & experiment outputs
+checkpoints/
+outputs/
+predictions/
+wandb/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+*.log
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

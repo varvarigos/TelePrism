@@ -1,0 +1,191 @@
+data:
+  KPI_list:
+    - "RSRP"
+    - "DL_BLER"
+    - "DL_MCS"
+    - "UL_BLER"
+    - "UL_MCS"
+    - "UL_NPRB"
+    - "UL_SNR"
+    - "TX_Bytes"
+    - "RX_Bytes"
+    - "Estimated_UL_Buffer"
+    - "PRBs_DL_Current"
+    - "PRBs_UL_Current"
+    - "PRB_Utilization_DL"
+    - "PRB_Utilization_UL"
+    - "UL_Protocol"
+    - "UL_NumberOfPackets"
+    - "DL_Protocol"
+    - "DL_NumberOfPackets"
+
+eval_tasks:
+  cong: True
+  activity: True
+  zone: True
+  motion: True
+  mean: False
+  variance: False
+  trends: False # Not as useful
+  periodicity: False
+  root_cause: True
+  anomaly_bounds: True # Not good
+  anomaly_detection: True
+  anomaly_length: False
+  jamming: False # Not used
+
+sample_size: None
+
+model_name: "teleencoder" # "teleencoder", "toto", "mantis", "chronos",
+                          # "autoformer", "fedformer", "informer", "nonstationary_transformer", "timesnet"
+
+autoformer_model:
+  train: False
+  d_model: 128
+  n_heads: 8
+  e_layers: 2
+  d_ff: 256
+  dropout: 0.1
+  activation: 'gelu'
+  factor: 1
+  moving_avg: 25
+  embed: 'fixed'
+  freq: 'h'
+
+fedformer_model:
+  train: True
+  version: 'Fourier'
+  mode_select: 'random'
+  modes: 32
+  d_model: 96
+  n_heads: 8
+  e_layers: 2
+  d_ff: 192
+  dropout: 0.1
+  activation: 'gelu'
+  moving_avg: 25
+  embed: 'fixed'
+  freq: 'h'
+
+informer_model:
+  train: True
+  d_model: 100
+  n_heads: 4
+  e_layers: 2
+  d_ff: 256
+  dropout: 0.1
+  activation: 'gelu'
+  factor: 1
+  embed: 'fixed'
+  freq: 'h'
+
+nonstationary_transformer_model:
+  train: True
+  d_model: 100
+  n_heads: 5
+  e_layers: 2
+  d_ff: 200
+  dropout: 0.1
+  activation: 'gelu'
+  factor: 1
+  embed: 'fixed'
+  freq: 'h'
+  p_hidden_dims: [64, 64]
+  p_hidden_layers: 2
+
+timesnet_model:
+  train: False
+  d_model: 128
+  e_layers: 2
+  d_ff: 256
+  dropout: 0.1
+  embed: 'fixed'
+  freq: 'h'
+  top_k: 5
+  num_kernels: 6
+
+teleencoder_model:
+  architecture:
+    seq_len: 128
+    patch:
+      size: 16
+      stride: 16
+    attn_mode: standard
+    d_model: 128
+    num_heads: 8
+    num_layers: 2
+    d_ff: 256
+    dropout: 0.1
+
+  context:
+    K: 4                      # prototypes per track; total 2K=8 context tokens
+    scale_encoder: graph      # "graph" (default) or "nme" (ablation), or "naive" (ablation)
+    graph:
+      d_node: 32
+      n_gnn_layers: 2
+      gnn_alpha_init: 0.5
+      gnn_tau_init: 0.3
+
+  experts:
+    num_experts: 8
+    top_k: 2
+    sparse_inference: true
+    balance_weight: 0.0
+    cluster_loss_weight: 0.0
+    dense_routing_warmup_epochs: 3
+    router_jitter_std: 0.01
+    router_init_std: 0.01
+    expert_init_gain: 0.3
+
+  router:
+    type: dynamic             # "dynamic" (default) or "naive" (ablation)
+    temperature: 1.0
+    ctx_weight: 0.4
+
+mantis_model:
+  train: False         # whether to fine-tune weights (True = unfreeze)
+  use_pretrained: True # True = load paris-noah/Mantis-8M; False = train MantisV1 from scratch
+  scratch:             # only used when use_pretrained=False (~1.54M params, on par with TeleEncoder)
+    hidden_dim: 256
+    transf_depth: 2
+    transf_num_heads: 8
+    transf_mlp_dim: 768
+    transf_dim_head: 32
+
+toto_model:
+  train: True
+  use_pretrained: False # True = load Datadog/Toto-Open-Base-1.0; False = TotoBackbone from scratch
+  scratch:              # only used when use_pretrained=False
+    seq_len: 128
+    patch_size: 16
+    stride: 16
+    embed_dim: 176
+    num_layers: 2
+    num_heads: 4
+    mlp_hidden_dim: 704
+    spacewise_every_n_layers: 2  # must divide num_layers
+    k_components: 6              # mixture components for MixtureOfStudentTs output
+
+chronos_model:
+  train: True
+  use_pretrained: False # True = load amazon/chronos-t5-tiny; False = T5EncoderModel from scratch
+  scratch:              # only used when use_pretrained=False
+    d_model: 192
+    d_kv: 48
+    d_ff: 384
+    num_heads: 4
+    num_layers: 2
+
+norm_method: 'zscore'
+train_llm: True
+use_lora: True
+use_thinking: True
+use_cot_labels: False
+
+classification:
+  use_head: False
+  task: "root_cause" # "anomaly_detection", "root_cause", "zone", "activity", "cong", "motion"
+
+model_status:
+  pretrained : False  # If false, then initialized randomly. If true, then use the already existing one
+  path_to_checkpoint: 'TS_checkpoints/ts_encoder_weights_final.pth' #If pretrained = true, this is the path to the checkpoint

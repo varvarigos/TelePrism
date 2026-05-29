@@ -1,0 +1,113 @@
+# RL (GRPO) TSLLM Configuration
+# The bash launcher (scripts/run_grpo_training.sh) reads this file.
+
+encoder: teleencoder # "teleencoder", "toto"
+
+# ── Starting model ──────────────────────────────────────────────────
+# Which SFT checkpoint to start RL from. Both are DeepSpeed checkpoints
+# that get "baked" into a single HF model dir before training.
+#
+#   "cold_start"  →  Reasoning-trained (CoT/thinking) checkpoint.
+#                    Best for tasks where the model already has ~60%+ accuracy.
+#   "base"        →  Base SFT checkpoint (no reasoning traces).
+#                    Use when starting RL without prior CoT training.
+#
+starting_model: cold_start   # "cold_start" or "base"
+
+checkpoints:
+  cold_start:
+    dir: ./checkpoints/cold_start
+    tag: epoch-2-7407
+  base:
+    dir: ./checkpoints/sft_base
+    tag: epoch-21-1851
+
+# ── LoRA ────────────────────────────────────────────────────────────
+lora:
+  enabled: true
+  rank: 128
+  alpha: 128
+  target_modules: 'q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj'
+  exclude_modules: 'embed_tokens|lm_head'
+
+# ── Paths ───────────────────────────────────────────────────────────
+paths:
+  base_dir: .
+  data_dir: ./checkpoints/grpo
+  model_path: ./checkpoints/grpo/model-baked
+  unbaked_model_dir: ./checkpoints/grpo/model-unbaked
+
+# ── GPU ─────────────────────────────────────────────────────────────
+gpu:
+  num_gpus: 4
+  tensor_parallel_size: 1
+
+# ── Training ────────────────────────────────────────────────────────
+training:
+  experiment_name: telecom_qwen3_4b_grpo
+  total_epochs: 200
+  grad_clip: 1.0
+
+  optimizer:
+    learning_rate: 5e-6
+    lr_scheduler_type: cosine
+    lr_warmup_steps: 10
+
+  batch:
+    train_batch_size: 128
+    ppo_mini_batch_size: 64
+    ppo_micro_batch_size: 2
+
+  sequence:
+    max_prompt_length: 256
+    max_response_length: 1024
+
+  grpo:
+    rollout_n: 8
+    temperature: 1.0
+    kl_loss_coef: 0.001
+    entropy_coeff: 0.01
+
+  # TS encoder training
+  train_encoder: true
+  encoder_l2_lambda: 0.001
+  encoder_lr_scale: 1.0
+
+  rollout:
+    gpu_memory_utilization: 0.37
+    max_model_len: 2048
+    max_num_seqs: 128
+
+# ── Encoder architectures ──────────────────────────────────────────
+toto:
+  use_pretrained: true
+  embed_dim: 1536
+
+teleencoder:
+  num_channels: 18
+  seq_len: 128
+  d_model: 128
+  num_heads: 8
+  num_layers: 2
+  d_ff: 256
+  dropout: 0.1
+  patch_size: 16
+  patch_stride: 16
+  attn_mode: standard
+  K: 4
+  scale_encoder: graph
+  d_node: 32
+  n_gnn_layers: 2
+  gnn_alpha_init: 0.5
+  gnn_tau_init: 0.3
+  num_experts: 8
+  top_k: 2
+  sparse_inference: true
+  router_init_std: 0.01
+  expert_init_gain: 0.3
+  router_jitter_std: 0.01
+  dense_routing_warmup_epochs: 3
+  router_type: dynamic
+  router_temperature: 1.0
+  ctx_weight: 0.4
+  embed_dim: 1024

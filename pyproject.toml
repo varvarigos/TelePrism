@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "teleprism"
+version = "0.1.0"
+description = "TelePrism: Multi-Modal Foundation Model for Telecom Time Series Reasoning"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Varvarigos et al." }]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/varvarigos/teleprism"
+
+# Runtime dependencies are pinned in requirements.txt (they include large,
+# CUDA-specific packages such as torch, vllm and deepspeed). Install with:
+#   pip install -e .
+#   pip install -r requirements.txt
+
+# The package lives directly under ./src and is imported as `teleprism`.
+[tool.setuptools]
+package-dir = { teleprism = "src" }
+packages = [
+    "teleprism",
+    "teleprism.dataset",
+    "teleprism.encoders",
+    "teleprism.encoders.teleencoder",
+    "teleprism.encoders.teleencoder.components",
+    "teleprism.evaluation",
+    "teleprism.evaluation.tasks",
+    "teleprism.evaluation.tasks.prompts",
+    "teleprism.models",
+    "teleprism.models.ts_llm",
+    "teleprism.models.ts_llm.tsllm_causal",
+    "teleprism.rl",
+    "teleprism.rl.training",
+    "teleprism.rl.training.preprocessing",
+    "teleprism.rl.training.rewards",
+    "teleprism.utils",
+    "teleprism.utils.layers",
+]
+
+# vLLM plugin: registers TSLLMModel in vLLM's ModelRegistry at startup.
+# Install in .venv with: pip install -e . --no-deps
+[project.entry-points."vllm.general_plugins"]
+teleprism = "teleprism.models.ts_llm.tsllm_causal.vllm_plugin:register_teleprism_model"
