@@ -31,7 +31,6 @@ from toto.inference.forecaster import TotoForecaster
 from toto.model.toto import Toto
 from toto.model.backbone import TotoBackbone
 from mantis.architecture import Mantis8M, MantisV1
-from teleprism.utils.weight_scheduler import WeightScheduler
 
 
 SEED = 42
@@ -79,7 +78,7 @@ def scale_kpi_units_(x: torch.tensor, KPI_list: list[str]) -> torch.tensor:
 @torch.no_grad()
 def evaluate(val_loader, full_model, args, tokenizer, ds_config, epoch, evaluator_name="eval"):
     """
-    Runs evaluation to compute average validation loss (or classification loss)
+    Runs evaluation to compute average validation loss
     in distributed DeepSpeed training.
 
     Returns:
@@ -115,10 +114,8 @@ def evaluate(val_loader, full_model, args, tokenizer, ds_config, epoch, evaluato
                 input_ids=batch.input_ids,
                 attention_mask=batch.attention_mask,
                 tokenizer=tokenizer,
-                labels=batch.labels if not args.classification["use_head"] else None,
-                gt_class=batch.gt_class if args.classification["use_head"] else None,
+                labels=batch.labels,
                 scaled_params=scaled_params,
-                weight_boost=None,
                 kwargs={"model_name": args.model_name},
             )
 
@@ -187,19 +184,7 @@ def train(args: dict, ds_config: dict) -> None:
         tokenizer.add_special_tokens(
             {
                 "additional_special_tokens": [
-                    "<|begin_of_TS|>", "<|end_of_TS|>", '<|CLS|>',
-                    "<|activity|>", "</activity|>",
-                    "<|zone|>", "</zone|>",
-                    "<|root_cause|>", "</root_cause|>",
-                    "<|mean|>", "</mean|>",
-                    "<|variance|>", "</variance|>",
-                    "<|trends|>", "</trends|>",
-                    "<|periodicity|>", "</periodicity|>",
-                    "<|cong|>", "</cong|>",
-                    "<|mobility|>", "</mobility|>",
-                    "<|anomaly_detection|>", "</anomaly_detection|>",
-                    "<|anomaly_bounds|>", "</anomaly_bounds|>",
-                    "<|anomaly_length|>", "</anomaly_length|>",
+                    "<|begin_of_TS|>", "<|end_of_TS|>",
                 ]
             }
         )
@@ -399,28 +384,8 @@ def train(args: dict, ds_config: dict) -> None:
                 param.requires_grad = False
 
 
-        # Optionally use classification head
-        if args.classification["use_head"]:
-            task = args.classification["task"]
-            if task == 'root_cause':
-                num_classes = 11
-            elif task == 'anomaly_detection':
-                num_classes = 2
-            elif task == 'zone':
-                num_classes = 3
-            elif task == 'activity':
-                num_classes = 3
-            elif task in ["cong", "motion"]:
-                num_classes = 2
-            else:
-                raise ValueError(f"Unknown classification task: {task}")
-
-            head = torch.nn.Linear(model.config.hidden_size, num_classes).to(args.device, dtype=dtype)
-        else:
-            head = None
-
         with deepspeed.zero.Init(config_dict_or_path=ds_config):
-            full_model = FullModel(ts_encoder, align_layer, model, head)
+            full_model = FullModel(ts_encoder, align_layer, model)
 
 
         print(
@@ -466,14 +431,6 @@ def train(args: dict, ds_config: dict) -> None:
                 load_module_only=True            # Only load model weights
             )
 
-        if args.boosting["use"]:
-            weight_scheduler = WeightScheduler(
-                type=args.boosting["type"],
-                initial_weight=args.boosting["initial_weight"],
-                final_weight=args.boosting["final_weight"],
-                total_steps=args.boosting["total_steps"],
-            )
-
         # Training loop
         micro_loss_accum = 0.0
 
@@ -492,19 +449,13 @@ def train(args: dict, ds_config: dict) -> None:
                         input_ids=batch.input_ids,
                         attention_mask=batch.attention_mask,
                         tokenizer=tokenizer,
-                        labels=batch.labels if not args.classification["use_head"] else None,
-                        gt_class=batch.gt_class if args.classification["use_head"] else None,
+                        labels=batch.labels,
                         scaled_params=scaled_params,
-                        weight_boost=weight_scheduler.get_weight() if args.boosting["use"] else None,
                         kwargs={"model_name": args.model_name},
                     )
                     loss = outputs.loss
 
                 full_model.backward(loss)
-
-                # Apply weight boosting at optimizer step
-                if args.boosting["use"] and full_model.is_gradient_accumulation_boundary():
-                    weight_scheduler.step()
 
                 # Log gradient norms at optimizer step
                 if full_model.is_gradient_accumulation_boundary():
@@ -654,7 +605,7 @@ def main() -> None:
         ds_config = json.load(f)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--llm_model", type=str, default="meta-llama/Llama-3.2-3B-Instruct")
+    parser.add_argument("--llm_model", type=str, default="Qwen/Qwen3-4B")
     parser.add_argument(
         "--output_model", type=str, default="./checkpoints/cold_start"
     )

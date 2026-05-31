@@ -24,12 +24,9 @@ def build_reverse_map(qa_templates, answer_normalization):
 def collate_fn_timeseries_pretraining(
     batch: List[TimeseriesData], tokenizer: PreTrainedTokenizer,
     model_type: str = "llama",
-    classification_head: tuple = (False, None),
-    boosting: bool = False,
     device: torch.device = torch.device("cpu"),
     description: bool = False,
     use_thinking: bool = False,
-    use_cot_labels: bool = False,
     use_vllm: bool = False,
 ) -> TimeseriesData:
     """
@@ -46,129 +43,12 @@ def collate_fn_timeseries_pretraining(
     )
 
 
-    # Insert special tokens for activity questions to help model focus
-    if boosting:
-        assert not classification_head[0]
-        assert not use_cot_labels
-        for sample in batch:
-            if sample.question_category == "activity":
-                activity_keywords = ["youtube", "twitch", "file"]
-                activity_loc = -1
-                for keyword in activity_keywords:
-                    idx = sample.answers.lower().find(keyword)
-                    if idx != -1:
-                        activity_loc = idx
-                        break
-
-                sample.answers = (
-                    sample.answers[:activity_loc]
-                    + "<|activity|>"
-                    + sample.answers[activity_loc:activity_loc + len(keyword)]
-                    + "</activity|>"
-                    + sample.answers[activity_loc + len(keyword):]
-                )
-
-            elif sample.question_category == "zone":
-                zone_keywords = ["zone a", "zone b", "zone c"]
-                zone_loc = -1
-                for keyword in zone_keywords:
-                    idx = sample.answers.lower().find(keyword)
-                    if idx != -1:
-                        zone_loc = idx
-                        break
-
-                sample.answers = (
-                    sample.answers[:zone_loc]
-                    + "<|zone|>"
-                    + sample.answers[zone_loc:zone_loc + len(keyword)]
-                    + "</zone|>"
-                    + sample.answers[zone_loc + len(keyword):]
-                )
-
-            elif sample.question_category == "root_cause":
-                sample.answers = (
-                    sample.answers.replace("The anomaly is of type '", "The anomaly is of type <|root_cause|>")
-                    .replace("'.", "</root_cause|>.")
-                )
-            elif sample.question_category in ["mean", "variance", "trends", "periodicity"]:
-                answer_lower = sample.answers.lower()
-                loc = answer_lower.rfind(" is ") + len(" is ")
-                sample.answers = (
-                    sample.answers[:loc]
-                    + f"<|{sample.question_category}|>"
-                    + sample.answers[loc:]
-                    + f"</{sample.question_category}|>"
-                )
-            elif sample.question_category == "anomaly_detection":
-                sample.answers = (
-                    sample.answers.replace("Yes.", "<|anomaly_detection|>Yes</anomaly_detection|>.")
-                    .replace("No.", "<|anomaly_detection|>No</anomaly_detection|>.")
-                )
-            elif sample.question_category == "anomaly_length":
-                sample.answers = (
-                    sample.answers.replace("lasted for ", "lasted for <|anomaly_length|>")
-                    .replace(" time steps.", "</anomaly_length|> time steps.")
-                )
-            elif sample.question_category == "anomaly_bounds":
-                sample.answers = (
-                    sample.answers.replace("starts at ", "starts at <|anomaly_bounds|>")
-                    .replace(" and ends at ", "</anomaly_bounds|> and ends at <|anomaly_bounds|>")
-                    .replace(".", "</anomaly_bounds|>.")
-                )
-            elif sample.question_category == "mobility":
-                stationary_keywords = ["stationary", "still", "static", "not moving", "no"]
-                mobile_keywords = ["in motion", "mobile", "moving", "yes"]
-                answer_lower = sample.answers.lower()
-                loc = -1
-                for keyword in stationary_keywords + mobile_keywords:
-                    idx = answer_lower.find(keyword)
-                    if idx != -1:
-                        loc = idx
-                        break
-                if loc != -1:
-                    sample.answers = (
-                        sample.answers[:loc]
-                        + "<|mobility|>"
-                        + sample.answers[loc:loc + len(keyword)]
-                        + "</mobility|>"
-                        + sample.answers[loc + len(keyword):]
-                    )
-            elif sample.question_category == "cong":
-                no_cong_keywords = ["not congested", "no congestion", "normally",
-                                    "no congestion", "normal", "normally", "no",
-                                    "uncongested"]
-                cong_keywords = ["congested", "congestion", "heavy load", "yes",
-                                 "congestion", "overloaded"]
-
-                answer_lower = sample.answers.lower()
-                loc = -1
-                for keyword in no_cong_keywords + cong_keywords:
-                    idx = answer_lower.find(keyword)
-                    if idx != -1:
-                        loc = idx
-                        break
-                if loc != -1:
-                    sample.answers = (
-                        sample.answers[:loc]
-                        + "<|cong|>"
-                        + sample.answers[loc:loc + len(keyword)]
-                        + "</cong|>"
-                        + sample.answers[loc + len(keyword):]
-                    )
-
-
     # Construct chat-style or plain prompt+answer sequences
     if tokenizer.chat_template is None:
-        if classification_head[0]:
-            full_texts = [
-                "<|begin_of_TS|><|end_of_TS|> " + sample.questions + "<|CLS|>" + sample.answers
-                for sample in batch
-            ]
-        else:
-            full_texts = [
-                "<|begin_of_TS|><|end_of_TS|> " + sample.questions + sample.answers
-                for sample in batch
-            ]
+        full_texts = [
+            "<|begin_of_TS|><|end_of_TS|> " + sample.questions + sample.answers
+            for sample in batch
+        ]
         prompt_texts = [
             "<|begin_of_TS|><|end_of_TS|> " + sample.questions for sample in batch
         ]
@@ -231,67 +111,36 @@ def collate_fn_timeseries_pretraining(
 
         else:
             if model_type == "llama":
-                if classification_head[0]:
-                    conversations = [
-                        (
-                            f"<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant.<|eot_id|>"
-                            f"<|start_header_id|>user<|end_header_id|>\n\n<|begin_of_TS|><|end_of_TS|>{sample.questions}<|eot_id|>"
-                            f"<|start_header_id|>assistant<|end_header_id|>\n\n<|CLS|>{sample.answers}<|eot_id|>"
-                        )
-                        for sample in batch
-                    ]
-                else:
-                    conversations = [
-                        (
-                            f"<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant.<|eot_id|>"
-                            f"<|start_header_id|>user<|end_header_id|>\n\n<|begin_of_TS|><|end_of_TS|>{sample.questions}<|eot_id|>"
-                            f"<|start_header_id|>assistant<|end_header_id|>\n\n{sample.answers}<|eot_id|>"
-                        )
-                        for sample in batch
-                    ]
+                conversations = [
+                    (
+                        f"<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant.<|eot_id|>"
+                        f"<|start_header_id|>user<|end_header_id|>\n\n<|begin_of_TS|><|end_of_TS|>{sample.questions}<|eot_id|>"
+                        f"<|start_header_id|>assistant<|end_header_id|>\n\n{sample.answers}<|eot_id|>"
+                    )
+                    for sample in batch
+                ]
             elif model_type == "qwen":
                 if use_thinking:
-                    if classification_head[0]:
-                        conversations = [
-                            (
-                                # CASE 1: reasoning exists → use <think>
-                                f"<|im_start|>user\n<|begin_of_TS|><|end_of_TS|>{sample.questions}<|im_end|>\n"
-                                f"<|im_start|>assistant\n<think>\n{sample.reasoning}\n</think>\n\n<|CLS|>{sample.answers}<|im_end|>"
-                            ) if sample.reasoning.strip() else (
-                                # CASE 2: reasoning missing → normal response (thinking disabled)
-                                f"<|im_start|>user\n<|begin_of_TS|><|end_of_TS|>{sample.questions}<|im_end|>\n"
-                                f"<|im_start|>assistant\n<think>\n\n</think>\n\n<|CLS|>{sample.answers}<|im_end|>"
-                            )
-                            for sample in batch
-                        ]
-                    else:
-                        conversations = [
-                            (
-                                f"<|im_start|>user\n<|begin_of_TS|><|end_of_TS|>{sample.questions}<|im_end|>\n"
-                                f"<|im_start|>assistant\n<think>\n{sample.reasoning}\n</think>\n\n{sample.answers}<|im_end|>"
-                            ) if sample.reasoning.strip() else (
-                                f"<|im_start|>user\n<|begin_of_TS|><|end_of_TS|>{sample.questions}<|im_end|>\n"
-                                f"<|im_start|>assistant\n<think>\n\n</think>\n\n{sample.answers}<|im_end|>"
-                            )
-                            for sample in batch
-                        ]
+                    conversations = [
+                        (
+                            # CASE 1: reasoning exists → use <think>
+                            f"<|im_start|>user\n<|begin_of_TS|><|end_of_TS|>{sample.questions}<|im_end|>\n"
+                            f"<|im_start|>assistant\n<think>\n{sample.reasoning}\n</think>\n\n{sample.answers}<|im_end|>"
+                        ) if sample.reasoning.strip() else (
+                            # CASE 2: reasoning missing → normal response (thinking disabled)
+                            f"<|im_start|>user\n<|begin_of_TS|><|end_of_TS|>{sample.questions}<|im_end|>\n"
+                            f"<|im_start|>assistant\n<think>\n\n</think>\n\n{sample.answers}<|im_end|>"
+                        )
+                        for sample in batch
+                    ]
                 else:
-                    if classification_head[0]:
-                        conversations = [
-                            (
-                                f"<|im_start|>user\n<|begin_of_TS|><|end_of_TS|>{sample.questions}<|im_end|>\n"
-                                f"<|im_start|>assistant\n<think>\n\n</think>\n\n<|CLS|>{sample.answers}<|im_end|>"
-                            )
-                            for sample in batch
-                        ]
-                    else:
-                        conversations = [
-                            (
-                                f"<|im_start|>user\n<|begin_of_TS|><|end_of_TS|>{sample.questions}<|im_end|>\n"
-                                f"<|im_start|>assistant\n<think>\n\n</think>\n\n{sample.answers}<|im_end|>"
-                            )
-                            for sample in batch
-                        ]
+                    conversations = [
+                        (
+                            f"<|im_start|>user\n<|begin_of_TS|><|end_of_TS|>{sample.questions}<|im_end|>\n"
+                            f"<|im_start|>assistant\n<think>\n\n</think>\n\n{sample.answers}<|im_end|>"
+                        )
+                        for sample in batch
+                    ]
 
             input_ids = tokenizer(
                 conversations, padding=True, truncation=True, return_tensors="pt"
@@ -339,39 +188,6 @@ def collate_fn_timeseries_pretraining(
         ts_tensor = ts_tensor.to(device)
         input_ids = input_ids.to(device)
         attention_mask = attention_mask.to(device, dtype=torch.long)
-
-    # If classification head is used, compute gt_class labels
-    if classification_head[0]:
-        task = classification_head[1]
-        if task == "root_cause":
-            gt_class = torch.tensor(
-                [item.anomaly_type-1 for item in batch], dtype=torch.long
-            ).to(device)
-
-
-        elif task == "anomaly_detection":
-            gt_class = torch.tensor(
-                [1 if item.anomaly_type != 0 else 0 for item in batch], dtype=torch.long
-            ).to(device)
-
-        elif task in ["activity", "zone", "cong", "motion"]:
-            reverse_map = build_reverse_map(QA_templates, answer_normalization)[task]
-            class_2_id = {cls: idx for idx, cls in enumerate(sorted(set(reverse_map.values())))}
-            gt_class = torch.tensor(
-                [
-                    class_2_id[reverse_map[item.answers.lower().strip()]]
-                    for item in batch
-                ],
-                dtype=torch.long,
-            ).to(device)
-
-        return TimeseriesData(
-            timeseries=ts_tensor,
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            timestamp=[item.timestamp for item in batch],
-            gt_class=gt_class,
-        )
 
     # Compute labels with prompt masking
     target_ids = input_ids.clone()
@@ -423,11 +239,9 @@ def get_dataloader(args, tokenizer: PreTrainedTokenizer, data_split: str) -> Dat
         upsampling_type=args.upsampling_type,
         downsampling_type=args.downsampling_type,
         pad_mode=args.pad_mode,
-        classification_head=(args.classification["use_head"], args.classification["task"]),
         KPI_list=args.data["KPI_list"],
         descr_pretrain=args.descr_pretrain,
         use_thinking=args.use_thinking,
-        use_cot_labels=args.use_cot_labels,
         task_list=args.task_list,
         balance=getattr(args, "balance_dataset", True),
         skip_done_traces_path=getattr(args, "skip_done_traces_path", None),
@@ -445,9 +259,8 @@ def get_dataloader(args, tokenizer: PreTrainedTokenizer, data_split: str) -> Dat
 
     collate_fn = functools.partial(
         collate_fn_timeseries_pretraining, tokenizer=tokenizer, model_type=model_type,
-        classification_head=(args.classification["use_head"], args.classification["task"]),
-        boosting=args.boosting["use"], device=args.device, description=args.descr_pretrain,
-        use_thinking=args.use_thinking, use_cot_labels=args.use_cot_labels, use_vllm=use_vllm
+        device=args.device, description=args.descr_pretrain,
+        use_thinking=args.use_thinking, use_vllm=use_vllm
     )
 
     if getattr(args, "distributed", False):
@@ -498,10 +311,8 @@ def get_eval_dataloader(args, tokenizer: PreTrainedTokenizer, data_split: str) -
         upsampling_type=args.upsampling_type,
         downsampling_type=args.downsampling_type,
         pad_mode=args.pad_mode,
-        classification_head=(args.classification["use_head"], args.classification["task"]),
         KPI_list=args.data["KPI_list"],
         use_thinking=args.use_thinking,
-        use_cot_labels=args.use_cot_labels,
     )
 
     for sample in dataset.data:
@@ -519,8 +330,7 @@ def get_eval_dataloader(args, tokenizer: PreTrainedTokenizer, data_split: str) -
 
     collate_fn = functools.partial(
         collate_fn_timeseries_pretraining, tokenizer=tokenizer, model_type=model_type,
-        classification_head=(args.classification["use_head"], args.classification["task"]),
-        use_thinking=args.use_thinking, use_cot_labels=args.use_cot_labels,
+        use_thinking=args.use_thinking,
         device=args.device, use_vllm=use_vllm
     )
 

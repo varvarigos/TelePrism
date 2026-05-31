@@ -86,19 +86,7 @@ def main():
 
     # Resize vocab
     COLD_START_SPECIAL_TOKENS = [
-        "<|begin_of_TS|>", "<|end_of_TS|>", "<|CLS|>",
-        "<|activity|>", "</activity|>",
-        "<|zone|>", "</zone|>",
-        "<|root_cause|>", "</root_cause|>",
-        "<|mean|>", "</mean|>",
-        "<|variance|>", "</variance|>",
-        "<|trends|>", "</trends|>",
-        "<|periodicity|>", "</periodicity|>",
-        "<|cong|>", "</cong|>",
-        "<|mobility|>", "</mobility|>",
-        "<|anomaly_detection|>", "</anomaly_detection|>",
-        "<|anomaly_bounds|>", "</anomaly_bounds|>",
-        "<|anomaly_length|>", "</anomaly_length|>",
+        "<|begin_of_TS|>", "<|end_of_TS|>",
     ]
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_dir, trust_remote_code=True)

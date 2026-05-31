@@ -164,37 +164,24 @@ def main():
                 "input_ids": input_ids,
                 "attention_mask": attention_mask,
             }
-            if not args.classification["use_head"]:
-                labels = batch.labels.to(device)
-                initial_labels = labels
+            labels = batch.labels.to(device)
+            initial_labels = labels
 
             #B, L = input_ids.shape
             if 'llama' in args.llm_model.lower():
-                if not args.classification["use_head"]:
-                    strip = torch.tensor(
-                        tokenizer.encode("<|start_header_id|>assistant<|end_header_id|>\n\n", add_special_tokens=False),
-                        device=input_ids.device
-                    )
-                else:
-                    strip = torch.tensor(
-                        tokenizer.encode("<|start_header_id|>assistant<|end_header_id|>\n\n<|CLS|>", add_special_tokens=False),
-                        device=input_ids.device
-                    )
+                strip = torch.tensor(
+                    tokenizer.encode("<|start_header_id|>assistant<|end_header_id|>\n\n", add_special_tokens=False),
+                    device=input_ids.device
+                )
             elif 'qwen' in args.llm_model.lower():
-                if not args.classification["use_head"]:
-                    if args.use_thinking:
-                        strip = torch.tensor(
-                            tokenizer.encode("<|im_start|>assistant\n", add_special_tokens=False),
-                            device=input_ids.device
-                        )
-                    else:
-                        strip = torch.tensor(
-                            tokenizer.encode("</think>\n\n", add_special_tokens=False),
-                            device=input_ids.device
-                        )
+                if args.use_thinking:
+                    strip = torch.tensor(
+                        tokenizer.encode("<|im_start|>assistant\n", add_special_tokens=False),
+                        device=input_ids.device
+                    )
                 else:
                     strip = torch.tensor(
-                        tokenizer.encode("</think>\n\n<|CLS|>", add_special_tokens=False),
+                        tokenizer.encode("</think>\n\n", add_special_tokens=False),
                         device=input_ids.device
                     )
 
@@ -219,14 +206,13 @@ def main():
                 for i in range(attention_mask.size(0))
             ]
 
-            if not args.classification["use_head"]:
-                # Truncate and pad labels (pad with -100 to ignore in loss)
-                truncated_labels = [
-                    F.pad(labels[i, :last_token_idx[i]], (0, max_len - last_token_idx[i]), value=-100)
-                    for i in range(labels.size(0))
-                ]
+            # Truncate and pad labels (pad with -100 to ignore in loss)
+            truncated_labels = [
+                F.pad(labels[i, :last_token_idx[i]], (0, max_len - last_token_idx[i]), value=-100)
+                for i in range(labels.size(0))
+            ]
 
-                labels = torch.stack(truncated_labels)
+            labels = torch.stack(truncated_labels)
 
             input_ids = torch.stack(truncated_input_ids)
             attention_mask = torch.stack(truncated_attention_mask)
@@ -255,179 +241,55 @@ def main():
                     kwargs={"model_name": args.model_name},
                 )
 
-            if args.classification["use_head"]:
-                preds = torch.argmax(output.logits, dim=1)
-                if category in ["activity", "zone", "root_cause"]:
-                    results[category].append(preds.cpu().numpy() == batch.gt_class.detach().cpu().numpy())
-
-                elif category in ["cong", "motion", "anomaly_detection"]:
-                    gts = batch.gt_class.detach().cpu().numpy()
-                    preds = preds.cpu().numpy()
-                    results[category].append((gts, preds))
-
-                continue
-
-
             for idx, (sample_input_ids, sample_labels, sample_output) in enumerate(zip(truncated_input_ids, initial_labels, output)):
                 prompt = tokenizer.decode(sample_input_ids, skip_special_tokens=False)
                 label_ids_clean = sample_labels[sample_labels != -100]
                 true_answer_full = tokenizer.decode(label_ids_clean, skip_special_tokens=True)
-                if args.use_cot_labels:
-                    if args.use_thinking:
-                        true_thinking, true_cot = true_answer_full.split("</think>")
-                        true_thinking = true_thinking.replace("<think>", "").strip()
-                    else:
-                        true_cot = true_answer_full.strip()
-                    true_cot = true_cot.strip()
-                    sentences = re.split(
-                        r'(?:(?<=[.!?])\s+|\n+|->|=>|→|–|—)',
-                        true_cot
-                    )
-                    last_sentence = sentences[-1].strip()
-                    match = re.search(
-                        r"'([^']+)'(?:\s+[A-Za-z_]+)*\s*\.?\s*$",
-                        last_sentence
-                    )
-                    if not match:
-                        continue
-                    true_answer_raw = match.group(1)
-                    parsed_cot = sample_output.split("</think>")[-1].strip()
-                    sentences = re.split(
-                        r'(?:(?<=[.!?])\s+|\n+|->|=>|→|–|—)',
-                        parsed_cot
-                    )
-                    last_sentence = sentences[-1].strip()
-                    last_sentence = re.sub(r"(?:<\|im_end\|>\s*)+$", "", last_sentence).strip()
-
-                    match = re.search(
-                        r"'([^']+)'(?:\s+[A-Za-z_]+)*\s*\.?\s*$",
-                        last_sentence
-                    )
-                    if not match:
-                        continue
-                    parsed_response_raw = match.group(1)
-
-                    try:
-                        true_answer = float(true_answer_raw)
-                        parsed_response = float(parsed_response_raw)
-                    except (ValueError, TypeError):
-                        if category == "root_cause":
-                            true_answer = None
-                            parsed_response = None
-                            for k in anomaly_list:
-                                if k.lower() in true_answer_raw.lower():
-                                    true_answer = k
-
-                                if k.lower() in parsed_response_raw.lower():
-                                    parsed_response = k
-
-                                if true_answer is not None and parsed_response is not None:
-                                    break
-
-                            if true_answer is None:
-                                continue
-                        elif category == "anomaly_detection":
-                            try:
-                                if true_answer_raw.lower() == "anomaly detected":
-                                    true_answer = "yes"
-                                elif true_answer_raw.lower() == "no anomaly detected":
-                                    true_answer = "no"
-                                else:
-                                    continue
-
-                                if parsed_response_raw.lower() == "anomaly detected":
-                                    parsed_response = "yes"
-                                elif parsed_response_raw.lower() == "no anomaly detected":
-                                    parsed_response = "no"
-                                else:
-                                    parsed_response = None
-                            except (ValueError, TypeError):
-                                continue
-
-                        elif category == "anomaly_length":
-                            try:
-                                true_answer = int(true_answer_raw)
-                            except (ValueError, TypeError):
-                                continue
-
-                            try:
-                                parsed_response = int(parsed_response_raw)
-                            except (ValueError, TypeError):
-                                parsed_response = None
-
-                        elif category == "anomaly_bounds":
-                            try:
-                                first, second = true_answer_raw.split(',')
-                                first = int(first.strip())
-                                second = int(second.strip())
-                                true_answer = [first, second]
-                            except (ValueError, TypeError):
-                                continue
-
-                            try:
-                                first, second = parsed_response_raw.split(',')
-                                first = int(first.strip())
-                                second = int(second.strip())
-                                parsed_response = [first, second]
-                            except (ValueError, TypeError):
-                                parsed_response = None
-
+                if args.use_thinking:
+                    true_thinking, true_ans = true_answer_full.split("</think>")
+                    true_thinking = true_thinking.replace("<think>", "").strip()
+                    true_answer_full = true_ans.strip()
+                try:
+                    true_answer = float(true_answer_full)
+                except (ValueError, TypeError):
+                    if category == "root_cause":
+                        true_answer = None
+                        for k in anomaly_list:
+                            if k.lower() in true_answer_full.lower():
+                                true_answer = k
+                                break
+                        if true_answer is None:
+                            continue
+                    elif category == "anomaly_detection":
+                        if "yes" in true_answer_full.lower() and "no" not in true_answer_full.lower():
+                            true_answer = "yes"
+                        elif "no" in true_answer_full.lower() and "yes" not in true_answer_full.lower():
+                            true_answer = "no"
                         else:
-                            try:
-                                true_answer = answer_normalization[category][true_answer_raw]
-                                parsed_response = answer_normalization[category][parsed_response_raw]
-                            except (KeyError, ValueError, TypeError):
-                                continue
-
-                else:
-                    if args.use_thinking:
-                        true_thinking, true_ans = true_answer_full.split("</think>")
-                        true_thinking = true_thinking.replace("<think>", "").strip()
-                        true_answer_full = true_ans.strip()
-                    try:
-                        true_answer = float(true_answer_full)
-                    except (ValueError, TypeError):
-                        if category == "root_cause":
+                            continue
+                    elif category == "anomaly_length":
+                        match = re.search(r"The anomaly lasted for (\d+) time steps", true_answer_full)
+                        if match:
+                            true_answer = int(match.group(1))
+                        else:
                             true_answer = None
-                            for k in anomaly_list:
-                                if k.lower() in true_answer_full.lower():
-                                    true_answer = k
-                                    break
-                            if true_answer is None:
-                                continue
-                        elif category == "anomaly_detection":
-                            if "yes" in true_answer_full.lower() and "no" not in true_answer_full.lower():
-                                true_answer = "yes"
-                            elif "no" in true_answer_full.lower() and "yes" not in true_answer_full.lower():
-                                true_answer = "no"
-                            else:
-                                continue
-                        elif category == "anomaly_length":
-                            match = re.search(r"The anomaly lasted for (\d+) time steps", true_answer_full)
-                            if match:
-                                true_answer = int(match.group(1))
-                            else:
-                                true_answer = None
-                                continue
-                        elif category == "anomaly_bounds":
-                            # Robust parser handles both the legacy
-                            # "starts at X and ends at Y" wording and the new
-                            # "X, Y" index-pair format from the cold-start traces.
-                            true_answer = parse_anomaly_bounds(true_answer_full)
-                        elif category in ['mean','variance','trends','periodicity']:
-                            true_answer = eval_parse_dict[category](true_answer_full.lower().strip())
-                        else:  
-                            true_answer = normalize_target(true_answer_full.lower().strip(), category, reverse_map)
+                            continue
+                    elif category == "anomaly_bounds":
+                        # Robust parser handles both the legacy
+                        # "starts at X and ends at Y" wording and the new
+                        # "X, Y" index-pair format from the cold-start traces.
+                        true_answer = parse_anomaly_bounds(true_answer_full)
+                    elif category in ['mean','variance','trends','periodicity']:
+                        true_answer = eval_parse_dict[category](true_answer_full.lower().strip())
+                    else:
+                        true_answer = normalize_target(true_answer_full.lower().strip(), category, reverse_map)
 
-
-                    parsed_response = eval_parse_dict[category](sample_output)
+                parsed_response = eval_parse_dict[category](sample_output)
 
 
                 print(f"\n[Full True answer][rank {args.local_rank}]:\n{true_answer_full}")
                 if args.use_thinking:
                     print(f"\n[True reasoning][rank {args.local_rank}]:\n{true_thinking}")
-                if args.use_thinking and args.use_cot_labels:
-                    print(f"\n[True CoT][rank {args.local_rank}]:\n{true_cot}")
                 print(f"\n[Prompt][rank {args.local_rank}]:\n{prompt}")
                 print(f"\n[Generated output][rank {args.local_rank}]:\n{sample_output}")
                 print(f"\n[Parsed response][rank {args.local_rank}]:\n{parsed_response}")
@@ -602,12 +464,11 @@ def main():
     if args.save_predictions and torch.distributed.get_rank() == 0:
         os.makedirs(args.predictions_dir, exist_ok=True)
 
-        if not args.classification["use_head"]:
-            with open(os.path.join(args.predictions_dir, f"all_predictions_{args.tag}.json"), "w") as f:
-                json.dump(all_predictions, f, indent=2)
+        with open(os.path.join(args.predictions_dir, f"all_predictions_{args.tag}.json"), "w") as f:
+            json.dump(all_predictions, f, indent=2)
 
-            with open(os.path.join(args.predictions_dir, f"intermediate_results_{args.tag}.json"), "w") as f:
-                json.dump(results, f, indent=2)
+        with open(os.path.join(args.predictions_dir, f"intermediate_results_{args.tag}.json"), "w") as f:
+            json.dump(results, f, indent=2)
 
         with open(os.path.join(args.predictions_dir, f"metrics_{args.tag}.json"), "w") as f:
             json.dump(metrics, f, indent=2)

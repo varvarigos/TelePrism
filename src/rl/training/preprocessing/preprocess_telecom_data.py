@@ -147,7 +147,7 @@ def create_extra_info(sample, category: str) -> Dict[str, Any]:
     }
 
 
-def load_and_process_telecom_data(split: str, use_thinking: bool = True, use_cot_labels: bool = True) -> List[Any]:
+def load_and_process_telecom_data(split: str, use_thinking: bool = True) -> List[Any]:
     """
     Load TelecomTS dataset using existing TelePrism pipeline.
     
@@ -167,7 +167,6 @@ def load_and_process_telecom_data(split: str, use_thinking: bool = True, use_cot
         upsampling_type="pad",
         downsampling_type="interpolate",
         pad_mode="constant",
-        classification_head=(False, None),
         KPI_list=[
             "RSRP", "DL_BLER", "DL_MCS", "UL_BLER", "UL_MCS",
             "UL_NPRB", "UL_SNR", "TX_Bytes", "RX_Bytes",
@@ -178,7 +177,6 @@ def load_and_process_telecom_data(split: str, use_thinking: bool = True, use_cot
         ],
         descr_pretrain=False,
         use_thinking=use_thinking,
-        use_cot_labels=use_cot_labels,
         task_list=[
             "anomaly_detection", "root_cause", "anomaly_bounds",
             "zone", "activity", "cong", "motion"
@@ -192,8 +190,7 @@ def load_and_process_telecom_data(split: str, use_thinking: bool = True, use_cot
 def convert_to_verl_format(
     samples: List[Any],
     split: str,
-    use_thinking: bool = True,
-    use_cot_labels: bool = True
+    use_thinking: bool = True
 ) -> pd.DataFrame:
     """
     Convert TelecomTS samples to VERL parquet format.
@@ -268,8 +265,6 @@ def main():
                         help='Dataset split to process')
     parser.add_argument('--use_thinking', action='store_true', default=True,
                         help='Include thinking traces in targets')
-    parser.add_argument('--use_cot_labels', action='store_true', default=True,
-                        help='Include chain-of-thought labels in targets')
     parser.add_argument('--show_examples', action='store_true', default=True,
                         help='Print example samples after conversion')
     
@@ -284,10 +279,10 @@ def main():
     print("="*80)
     
     # Load and process data using existing pipeline
-    samples = load_and_process_telecom_data(args.split, args.use_thinking, args.use_cot_labels)
-    
+    samples = load_and_process_telecom_data(args.split, args.use_thinking)
+
     # Convert to VERL format
-    df = convert_to_verl_format(samples, args.split, args.use_thinking, args.use_cot_labels)
+    df = convert_to_verl_format(samples, args.split, args.use_thinking)
     
     # Save to parquet
     output_filename = f"telecom_{args.split}_grpo.parquet"

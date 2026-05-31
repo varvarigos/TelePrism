@@ -121,19 +121,7 @@ def load_model(args: argparse.Namespace, ds_config: dict, load_data: bool = True
     tokenizer.add_special_tokens(
         {
             "additional_special_tokens": [
-                "<|begin_of_TS|>", "<|end_of_TS|>", "<|CLS|>",
-                "<|activity|>", "</activity|>",
-                "<|zone|>", "</zone|>",
-                "<|root_cause|>", "</root_cause|>",
-                "<|mean|>", "</mean|>",
-                "<|variance|>", "</variance|>",
-                "<|trends|>", "</trends|>",
-                "<|periodicity|>", "</periodicity|>",
-                "<|cong|>", "</cong|>",
-                "<|mobility|>", "</mobility|>",
-                "<|anomaly_detection|>", "</anomaly_detection|>",
-                "<|anomaly_bounds|>", "</anomaly_bounds|>",
-                "<|anomaly_length|>", "</anomaly_length|>",
+                "<|begin_of_TS|>", "<|end_of_TS|>",
             ]
         }
     )
@@ -289,34 +277,13 @@ def load_model(args: argparse.Namespace, ds_config: dict, load_data: bool = True
 
     align_layer = AlignLayer(embed_dim, model.config.hidden_size).to(args.device, dtype=dtype)
 
-    # Optionally use classification head
-    if args.classification["use_head"]:
-        task = args.classification["task"]
-        if task == 'root_cause':
-            num_classes = 11
-        elif task == 'anomaly_detection':
-            num_classes = 2
-        elif task == 'zone':
-            num_classes = 4
-        elif task == 'activity':
-            num_classes = 3
-        elif task in ["cong", "motion"]:
-            num_classes = 2
-        else:
-            raise ValueError(f"Unknown classification task: {task}")
-
-        head = torch.nn.Linear(model.config.hidden_size, num_classes).to(args.device, dtype=dtype)
-    else:
-        head = None
-    
-
     if not args.train_llm:
         for param in model.parameters():
             param.requires_grad = False
 
     # Full hybrid model
     with deepspeed.zero.Init(config_dict_or_path=ds_config):
-        full_model = FullModel(ts_encoder, align_layer, model, head)
+        full_model = FullModel(ts_encoder, align_layer, model)
 
 
     # Remove scheduler from ds_config if it exists

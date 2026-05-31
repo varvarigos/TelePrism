@@ -3,20 +3,18 @@ set -e
 source .venv/bin/activate
 
 # Cold-start SFT of TelePrism (TeleEncoder + Qwen3-4B) with DeepSpeed Zero-3 + LoRA.
-#
-# NOTE: the `source .venv/bin/activate` above is required. Without it the
-# DeepSpeed launcher spawns worker subprocesses with the system /usr/bin/python3
-# (no torch/deepspeed), failing with confusing import errors.
 
-export MASTER_PORT=29515
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
-# Set your own Weights & Biases key (or run `wandb login`):
-# export WANDB_API_KEY=<your-wandb-api-key>
-export CUDA_HOME=/usr/local/cuda-12.1
-export PATH="${CUDA_HOME}/bin:${PATH}"
-export CUDAHOSTCXX=g++-11
-export CC=gcc-11
-export CXX=g++-11
+# CUDA is auto-detected from your environment; only set CUDA_HOME if your
+# toolkit isn't found (e.g. `export CUDA_HOME=/usr/local/cuda`).
+# Weights & Biases: run `wandb login` once, or set WANDB_API_KEY in your shell.
+# Use gcc/g++ 11 for CUDA extension builds when available (some CUDA versions
+# reject newer host compilers); otherwise fall back to the system default.
+if command -v g++-11 >/dev/null 2>&1; then
+    export CUDAHOSTCXX=g++-11
+    export CC=gcc-11
+    export CXX=g++-11
+fi
 
 deepspeed --include localhost:0,1 src/train_tsllm.py \
     --deepspeed_config configs/ds_conf.json \

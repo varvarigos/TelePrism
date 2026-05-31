@@ -31,7 +31,6 @@ class TimeseriesData:
     labels: Optional[npt.NDArray] = None                    # Shape: [B, L] or [L]
     anomaly_type: Optional[str] = None
     timestamp: Optional[List[List]] = None
-    gt_class: Optional[Union[int, List[int]]] = None       # Ground truth class for classification tasks
     reasoning: Optional[str] = None                        # Chain-of-thought reasoning text
     parsed_answer: Optional[str] = None                    # Parsed final answer from reasoning
 

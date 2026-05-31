@@ -173,19 +173,7 @@ norm_method: 'zscore'
 train_llm: True
 use_lora: True
 use_thinking: True
-use_cot_labels: False
 descr_pretrain: False
-
-boosting:             # Weight boosting configuration
-  use: False
-  type: "constant"    # "constant", "linear", "exponential", "heaviside"
-  initial_weight: 1
-  final_weight: 100
-  total_steps: 400
-
-classification:
-  use_head: False
-  task: "root_cause"  # "anomaly_detection", "root_cause", "zone", "activity", "cong", "motion"
 
 model_status:
   pretrained : False  # If false, then initialized randomly. If true, then use the already existing one

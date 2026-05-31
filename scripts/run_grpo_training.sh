@@ -76,9 +76,13 @@ LORA_EXCLUDE_MODULES=$(yq lora.exclude_modules)
 
 # === ENVIRONMENT ===
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
-export CUDAHOSTCXX=g++-11
-export CC=gcc-11
-export CXX=g++-11
+# Use gcc/g++ 11 for CUDA extension builds when available (some CUDA versions
+# reject newer host compilers); otherwise fall back to the system default.
+if command -v g++-11 >/dev/null 2>&1; then
+    export CUDAHOSTCXX=g++-11
+    export CC=gcc-11
+    export CXX=g++-11
+fi
 # export WANDB_API_KEY=<your-wandb-api-key>
 
 # Derived paths

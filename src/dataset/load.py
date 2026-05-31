@@ -60,8 +60,8 @@ def get_anomaly_type_answer(data):
         return "The type of the anomaly is unknown."
 
 
-def process_dataset(dataset: List[dict], classification_head: tuple = (False, "root_cause"),
-                    use_thinking=False, use_cot_labels=False, task_list: List[str] = None) -> List[TimeseriesData]:
+def process_dataset(dataset: List[dict],
+                    use_thinking=False, task_list: List[str] = None) -> List[TimeseriesData]:
     """Build TimeseriesData rows from AliMaatouk/TelecomTS chunks.
 
     Reasoning lives directly on each Q&A entry (`QA["reasoning"]`) — no
@@ -96,8 +96,6 @@ def process_dataset(dataset: List[dict], classification_head: tuple = (False, "r
             category, label_map = get_question_category(QA["q"], QA["a"])
             a = QA["a"]
 
-            if classification_head[0] and category != classification_head[1]:
-                continue
             if task_list is not None and category not in task_list:
                 continue
             if category == "jam":
@@ -108,7 +106,7 @@ def process_dataset(dataset: List[dict], classification_head: tuple = (False, "r
             reasoning_text = (QA.get("reasoning") or "").strip()
             parsed_answer = a  # answer field on the QA entry IS the parsed answer
 
-            if use_thinking or use_cot_labels:
+            if use_thinking:
                 # Keep only samples that have a reasoning trace.
                 if reasoning_text == "":
                     continue
@@ -123,7 +121,7 @@ def process_dataset(dataset: List[dict], classification_head: tuple = (False, "r
                     anomaly_type=anomaly_type,
                     timestamp=timestamp,
                     reasoning=reasoning_text if use_thinking else None,
-                    parsed_answer=parsed_answer if (use_thinking or use_cot_labels) else None,
+                    parsed_answer=parsed_answer if use_thinking else None,
                 )
             )
 

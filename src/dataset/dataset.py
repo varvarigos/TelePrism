@@ -33,11 +33,9 @@ class PretrainingDataset(TaskDataset):
         pad_mode: str = "constant",
         pad_constant_values: int = 0,
         return_meta_data: bool = False,
-        classification_head: tuple = (False, "root_cause"),
         KPI_list: Optional[List[str]] = None,
         descr_pretrain: bool = False,
         use_thinking: bool = False,
-        use_cot_labels: bool = False,
         task_list: Optional[List[str]] = None,
         balance: bool = True,
         skip_done_traces_path: Optional[str] = None,
@@ -56,11 +54,9 @@ class PretrainingDataset(TaskDataset):
         self.pad_mode = pad_mode
         self.pad_constant_values = pad_constant_values
         self.return_meta_data = return_meta_data
-        self.classification_head = classification_head
         self.KPI_list = KPI_list
         self.descr_pretrain = descr_pretrain
         self.use_thinking = use_thinking
-        self.use_cot_labels = use_cot_labels
         self.task_list = task_list
         self.balance = balance
         self.skip_done_traces_path = skip_done_traces_path
@@ -98,7 +94,7 @@ class PretrainingDataset(TaskDataset):
 
     def _balance_data(
         self, inter_category_balance=False, description=False,
-        use_thinking=False, use_cot_labels=False
+        use_thinking=False
     ) -> None:
         """Balance the dataset across different question categories and anomaly types."""
         if description:
@@ -140,14 +136,14 @@ class PretrainingDataset(TaskDataset):
             balanced_by_category = {}
 
             for category in normal_categories:
-                if not (use_thinking or use_cot_labels):
+                if not use_thinking:
                     key_to_answers = {
                         key: {ans for _, ans in QA_templates[category][key]}
                         for key in QA_templates[category]
                     }
 
                 # Group samples by key
-                if not (use_thinking or use_cot_labels):
+                if not use_thinking:
                     type_to_samples = {key: [] for key in QA_templates[category]}
                 else:
                     # We can use the parsed_answer directly as key
@@ -155,7 +151,7 @@ class PretrainingDataset(TaskDataset):
                 for s in self.data:
                     if s.question_category != category:
                         continue
-                    if not (use_thinking or use_cot_labels):
+                    if not use_thinking:
                         for key, ans_set in key_to_answers.items():
                             answers = s.answers
 
@@ -186,13 +182,13 @@ class PretrainingDataset(TaskDataset):
                 random.shuffle(trend_samples)
                 kpi_to_trend_samples = {}
                 for s in trend_samples:
-                    if use_thinking or use_cot_labels:
+                    if use_thinking:
                         answers = s.parsed_answer
                     else:
                         answers = s.answers
                     parts = answers.split()
                     try:
-                        if not (use_thinking or use_cot_labels):
+                        if not use_thinking:
                             kpi_name = parts[3]
                             trend_value = parts[-1]
                         else:
@@ -266,8 +262,8 @@ class PretrainingDataset(TaskDataset):
         self.data = load_dataset("AliMaatouk/TelecomTS", data_files="**/processed/chunked.jsonl")
         self.data = self.data["train"]
         self.data = process_dataset(
-            self.data, self.classification_head, use_thinking=self.use_thinking,
-            use_cot_labels=self.use_cot_labels, task_list=self.task_list
+            self.data, use_thinking=self.use_thinking,
+            task_list=self.task_list
         )
         random.shuffle(self.data)
         self._check_and_remove_nans()
