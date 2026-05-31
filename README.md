@@ -148,7 +148,8 @@ bash scripts/train_tsllm.sh
 
 - **Config:** `configs/train_tsllm.yaml` (encoder choice via `model_name`, KPI
   list, task list, LoRA, normalization, etc.) and `configs/ds_conf.json`
-  (DeepSpeed Zero-3).
+  (DeepSpeed Zero-3). In `ds_conf.json`, `train_batch_size` must equal
+  `num_gpus × train_micro_batch_size_per_gpu × gradient_accumulation_steps`.
 - **Output:** SFT checkpoints under `./checkpoints/cold_start/`.
 
 ### 2. GRPO reinforcement learning
