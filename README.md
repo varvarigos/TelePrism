@@ -2,6 +2,10 @@
 
 **A Multi-Modal Foundation Model for Telecom Time Series Reasoning**
 
+<p align="center">
+  <img src="figures/teaser.png" alt="TelePrism" width="100%">
+</p>
+
 TelePrism lets network operators reason over 5G telemetry in natural language —
 detecting anomalies, diagnosing root causes, localizing degraded intervals, and
 explaining each conclusion in terms of the underlying KPI evidence. It closes two
