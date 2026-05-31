@@ -183,7 +183,9 @@ bash scripts/evaluate_tsllm.sh
 
 - **Config:** `configs/evaluate_tsllm.yaml` (`eval_tasks` toggles which of the 7
   tasks to run) plus CLI flags in the script (`--checkpoint_dir`, `--tag`,
-  `--sample_size`, `--save_predictions`).
+  `--sample_size`, `--save_predictions`). Uses `configs/ds_conf.json` too, so the
+  same `train_batch_size = num_gpus × train_micro_batch_size_per_gpu ×
+  gradient_accumulation_steps` constraint applies.
 - **Output:** per-task metrics; predictions under `./predictions/` when
   `--save_predictions True`.
 
