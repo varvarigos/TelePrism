@@ -185,9 +185,7 @@ def collate_fn_timeseries_pretraining(
     attention_mask = input_ids.ne(tokenizer.pad_token_id)
 
     if not use_vllm:
-        ts_tensor = ts_tensor.to(device)
-        input_ids = input_ids.to(device)
-        attention_mask = attention_mask.to(device, dtype=torch.long)
+        attention_mask = attention_mask.to(dtype=torch.long)
 
     # Compute labels with prompt masking
     target_ids = input_ids.clone()

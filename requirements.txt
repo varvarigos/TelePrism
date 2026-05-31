@@ -1,41 +1,9 @@
-# TelePrism runtime dependencies.
-# Install after `pip install -e .`:  pip install -r requirements.txt
-#
-# torch / vLLM / DeepSpeed are CUDA-specific. The versions below match the
-# paper's setup; adjust torch to your CUDA toolkit if needed.
-
-# ── Core deep learning ───────────────────────────────────────────────
-torch>=2.4
-transformers>=4.51
-peft>=0.13
 deepspeed==0.18.6
 vllm==0.15.1
-# NOTE: verl is vendored under src/rl/verl (used via PYTHONPATH, not pip-installed).
-# Install its dependencies with:  pip install -r src/rl/verl/requirements.txt
 
-# ── HuggingFace data / IO ────────────────────────────────────────────
-datasets>=3.0
 huggingface-hub>=0.36.2
-safetensors>=0.4
-
-# ── Scientific stack ─────────────────────────────────────────────────
-numpy>=1.26
-pandas>=2.0
-scipy>=1.11
-scikit-learn>=1.3
-einops>=0.8
-regex>=2024.0
-sympy>=1.12
-pyyaml>=6.0
-tqdm>=4.66
-matplotlib>=3.8
-
-# ── Time-series baseline encoders (paper Tables 1 & 2) ───────────────
 timm>=1.0.15,<2.0
 reformer-pytorch>=1.4.4
-mantis-tsfm                 # Mantis baseline
-chronos-forecasting         # Chronos baseline
 
-# TOTO baseline (Datadog Toto, paper fork) is installed separately because it
-# is a git dependency — see the install step in the README:
-#   pip install "git+https://github.com/varvarigos/toto.git@main#egg=toto-ts"
+mantis-tsfm
+chronos-forecasting

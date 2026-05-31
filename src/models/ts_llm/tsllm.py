@@ -70,6 +70,10 @@ class FullModel(nn.Module):
         dtype = next(self.base_model.parameters()).dtype
 
         ts = ts.to(device=device, dtype=dtype)
+        input_ids = input_ids.to(device)
+        attention_mask = attention_mask.to(device)
+        if labels is not None:
+            labels = labels.to(device)
 
         # Encode and align time-series
         if self.ts_encoder is not None:

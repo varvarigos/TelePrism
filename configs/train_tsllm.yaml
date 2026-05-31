@@ -181,6 +181,6 @@ model_status:
   path_to_align: './checkpoints/cold_start/align_layer/model.safetensors'
 
 deepspeed_pretrained:
-  status: True 
+  status: False 
   checkpoint: "./checkpoints/sft_base"
   tag: "epoch-21-1851"
