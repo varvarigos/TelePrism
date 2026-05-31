@@ -213,8 +213,8 @@ def load_model(args: argparse.Namespace, ds_config: dict, load_data: bool = True
             router_jitter_std=exp["router_jitter_std"],
             dense_routing_warmup_epochs=exp["dense_routing_warmup_epochs"],
         ).to(args.device, dtype=dtype)
-        if args.model_status["pretrained"]:
-            ckpt = torch.load(args.model_status["path_to_checkpoint"])
+        if args.pretrained_encoder["pretrained"]:
+            ckpt = torch.load(args.pretrained_encoder["path_to_checkpoint"])
             ts_encoder.load_state_dict(ckpt)
 
     elif args.model_name == "mantis":

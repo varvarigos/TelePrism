@@ -181,6 +181,6 @@ train_llm: True
 use_lora: True
 use_thinking: True
 
-model_status:
+pretrained_encoder:
   pretrained : False  # If false, then initialized randomly. If true, then use the already existing one
   path_to_checkpoint: 'TS_checkpoints/ts_encoder_weights_final.pth' #If pretrained = true, this is the path to the checkpoint

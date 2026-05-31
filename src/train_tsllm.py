@@ -235,9 +235,9 @@ def train(args: dict, ds_config: dict) -> None:
             for param in ts_encoder.parameters():
                 param.requires_grad = args.toto_model["train"]
 
-            if args.model_status["pretrained"]:
+            if args.pretrained_encoder["pretrained"]:
                 state_dict = safetorch.load_file(
-                    os.path.join(args.model_status["path_to_TS"], "model.safetensors")
+                    os.path.join(args.pretrained_encoder["path_to_TS"], "model.safetensors")
                 )
                 backbone_state_dict = {k.replace("model.", "", 1): v for k, v in state_dict.items()}
                 ts_encoder.load_state_dict(backbone_state_dict)
@@ -282,9 +282,9 @@ def train(args: dict, ds_config: dict) -> None:
                 dense_routing_warmup_epochs=exp["dense_routing_warmup_epochs"],
             ).to(args.device, dtype=dtype)
 
-            if args.model_status["pretrained"]:
+            if args.pretrained_encoder["pretrained"]:
                 state_dict = safetorch.load_file(
-                    os.path.join(args.model_status["path_to_TS"], "model.safetensors")
+                    os.path.join(args.pretrained_encoder["path_to_TS"], "model.safetensors")
                 )
                 ts_encoder.load_state_dict(state_dict)
 
@@ -309,9 +309,9 @@ def train(args: dict, ds_config: dict) -> None:
             for param in ts_encoder.parameters():
                 param.requires_grad = args.mantis_model["train"]
 
-            if args.model_status["pretrained"]:
+            if args.pretrained_encoder["pretrained"]:
                 state_dict = safetorch.load_file(
-                    os.path.join(args.model_status["path_to_TS"], "model.safetensors")
+                    os.path.join(args.pretrained_encoder["path_to_TS"], "model.safetensors")
                 )
                 ts_encoder.load_state_dict(state_dict)
 
@@ -323,9 +323,9 @@ def train(args: dict, ds_config: dict) -> None:
             for param in ts_encoder.parameters():
                 param.requires_grad = args.chronos_model["train"]
 
-            if args.model_status["pretrained"]:
+            if args.pretrained_encoder["pretrained"]:
                 state_dict = safetorch.load_file(
-                    os.path.join(args.model_status["path_to_TS"], "model.safetensors")
+                    os.path.join(args.pretrained_encoder["path_to_TS"], "model.safetensors")
                 )
                 ts_encoder.load_state_dict(state_dict)
 
@@ -360,9 +360,9 @@ def train(args: dict, ds_config: dict) -> None:
             for param in ts_encoder.parameters():
                 param.requires_grad = cfg.get("train", True)
 
-            if args.model_status["pretrained"]:
+            if args.pretrained_encoder["pretrained"]:
                 state_dict = safetorch.load_file(
-                    os.path.join(args.model_status["path_to_TS"], "model.safetensors")
+                    os.path.join(args.pretrained_encoder["path_to_TS"], "model.safetensors")
                 )
                 ts_encoder.load_state_dict(state_dict)
 
@@ -372,11 +372,11 @@ def train(args: dict, ds_config: dict) -> None:
         align_layer = AlignLayer(embed_dim, model.config.hidden_size).to(
             args.device, dtype=dtype
         )
-        if args.model_status["pretrained"] == True:
-            if '.safetensors' in args.model_status["path_to_align"]:
-                ckpt_align = safetorch.load_file(args.model_status["path_to_align"])
+        if args.pretrained_encoder["pretrained"] == True:
+            if '.safetensors' in args.pretrained_encoder["path_to_align"]:
+                ckpt_align = safetorch.load_file(args.pretrained_encoder["path_to_align"])
             else:
-                ckpt_align = torch.load(args.model_status["path_to_align"], weights_only=False)
+                ckpt_align = torch.load(args.pretrained_encoder["path_to_align"], weights_only=False)
             align_layer.load_state_dict(ckpt_align)
 
         if not args.train_llm:

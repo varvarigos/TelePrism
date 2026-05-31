@@ -175,7 +175,7 @@ use_lora: True
 use_thinking: True
 descr_pretrain: False
 
-model_status:
+pretrained_encoder:
   pretrained : False  # If false, then initialized randomly. If true, then use the already existing one
   path_to_TS: './checkpoints/cold_start/teleencoder' #If pretrained = true, this is the path to the checkpoint
   path_to_align: './checkpoints/cold_start/align_layer/model.safetensors'
