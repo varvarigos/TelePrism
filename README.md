@@ -96,9 +96,9 @@ early-fusion pipeline.
 
 ## Installation
 
-Requires **Python 3.11+** and one or more **CUDA-capable GPUs**. `torch`, `vllm`
-(0.15.1) and `deepspeed` are CUDA-specific — adjust `torch` in `requirements.txt`
-to match your CUDA toolkit if needed.
+Requires **Python 3.11+** and one or more **CUDA-capable GPUs**.
+
+> Requires an NVIDIA driver supporting **CUDA ≥ 12.8** (Linux: driver **≥ 570**; check `nvidia-smi`).
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
