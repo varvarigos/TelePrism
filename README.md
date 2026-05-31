@@ -120,11 +120,6 @@ pip install "git+https://github.com/varvarigos/toto.git@main#egg=toto-ts"
 used directly via `PYTHONPATH` — it is *not* pip-installed. `scripts/run_grpo_training.sh`
 adds it to the path automatically.
 
-> **Why the venv matters.** Every script in `scripts/` begins with
-> `source .venv/bin/activate`. This is required: without it the DeepSpeed
-> launcher spawns worker subprocesses with the system `/usr/bin/python3` (no
-> torch/deepspeed) and fails with confusing import errors.
-
 ---
 
 ## Dataset
