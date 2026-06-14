@@ -296,14 +296,42 @@ def load_model(args: argparse.Namespace, ds_config: dict, load_data: bool = True
         config_params=ds_config,
     )
 
-    full_model.load_checkpoint(
-        args.checkpoint_dir,
-        tag=args.tag,
-        load_module_strict=True,
-        load_optimizer_states=False,  # Don't load optimizer state
-        load_lr_scheduler_states=False,  # Don't load scheduler state
-        load_module_only=True  # Only load model weights
+    # Load trainable weights into the Zero-3 model. Supports both the
+    # consolidated pytorch_model.pt and a legacy DeepSpeed shard dir.
+    # GatheredParameters(modifier_rank=0) sets each param correctly under Zero-3.
+    consolidated_pt = os.path.join(args.checkpoint_dir, args.tag, "pytorch_model.pt")
+    if os.path.isfile(consolidated_pt):
+        print(f"[load] loading consolidated fp32 checkpoint {consolidated_pt}", flush=True)
+        state_dict = torch.load(consolidated_pt, map_location="cpu", weights_only=True)
+    else:
+        from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
+        print(f"[load] consolidating legacy Zero shard checkpoint {args.checkpoint_dir} (tag={args.tag})", flush=True)
+        state_dict = get_fp32_state_dict_from_zero_checkpoint(args.checkpoint_dir, tag=args.tag)
+    state_dict = {k[len("module."):] if k.startswith("module.") else k: v
+                  for k, v in state_dict.items()}
+    is_rank0 = (not dist.is_initialized()) or dist.get_rank() == 0
+    loaded = 0
+    missing = []
+    skipped_frozen = 0
+    for name, param in full_model.module.named_parameters():
+        if not param.requires_grad:
+            skipped_frozen += 1
+            continue
+        if name not in state_dict:
+            missing.append(name)
+            continue
+        with deepspeed.zero.GatheredParameters([param], modifier_rank=0):
+            if is_rank0:
+                param.data.copy_(state_dict[name].to(param.dtype).to(param.device))
+        loaded += 1
+    print(
+        f"[load] trainable_loaded={loaded} missing_trainable={len(missing)} "
+        f"frozen_skipped={skipped_frozen}",
+        flush=True,
     )
+    if missing:
+        print(f"  WARNING: first 5 missing trainable: {missing[:5]}", flush=True)
+    del state_dict
 
     if not load_data:
         return full_model, tokenizer, args.device, dtype

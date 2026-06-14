@@ -183,4 +183,4 @@ pretrained_encoder:
 deepspeed_pretrained:
   status: False 
   checkpoint: "./checkpoints/sft_base"
-  tag: "epoch-21-1851"
+    tag: "epoch-40-6340"

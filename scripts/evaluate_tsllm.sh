@@ -1,6 +1,5 @@
 #!/bin/bash
 set -e
-source .venv/bin/activate
 
 # Multi-task evaluation over the 7 TelecomTS tasks.
 
@@ -14,9 +13,9 @@ if command -v g++-11 >/dev/null 2>&1; then
     export CXX=g++-11
 fi
 
-deepspeed --include localhost:0,1 src/evaluate_tsllm.py \
+deepspeed src/evaluate_tsllm.py \
     --checkpoint_dir ./checkpoints/cold_start \
-    --tag epoch-17-1851 \
+    --tag epoch-40-6340 \
     --batch_size 128 \
     --deepspeed_config configs/ds_conf.json \
     --llm_model Qwen/Qwen3-4B \

@@ -106,11 +106,17 @@ def main():
     print(f"Config vocab_size updated to: {new_vocab}")
     print()
 
-    # Restore trained embed_tokens and lm_head from DS checkpoint
-    from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
-
-    print("Loading DS checkpoint for trained embed_tokens / lm_head ...")
-    ds_sd = get_fp32_state_dict_from_zero_checkpoint(ckpt_dir, tag=ckpt_tag)
+    # Restore trained embed_tokens / lm_head (consolidated .pt or legacy DS shard dir).
+    consolidated_pt = os.path.join(ckpt_dir, ckpt_tag, "pytorch_model.pt")
+    if os.path.isfile(consolidated_pt):
+        print(f"Loading consolidated checkpoint for trained embed_tokens / lm_head: {consolidated_pt}")
+        ds_sd = torch.load(consolidated_pt, map_location="cpu", weights_only=True)
+    else:
+        from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
+        print("Loading DS Zero shard checkpoint for trained embed_tokens / lm_head ...")
+        ds_sd = get_fp32_state_dict_from_zero_checkpoint(ckpt_dir, tag=ckpt_tag)
+    ds_sd = {k[len("module."):] if k.startswith("module.") else k: v
+             for k, v in ds_sd.items()}
 
     DS_PREFIX = "base_model.base_model.model."
 
@@ -239,7 +245,9 @@ def main():
     print(f"Baked model directory ready: {args.output_dir}")
     print()
     print("To use with VERL GRPO training:")
-    print(f'  set paths.model_path="{args.output_dir}" in configs/grpo_tsllm.yaml, then: bash scripts/run_grpo_training.sh')
+    print('  set paths.store_dir in configs/grpo_tsllm.yaml to your storage root')
+    print('  (the launcher bakes/loads under <store_dir>/checkpoints/grpo/model-baked),')
+    print('  then: bash scripts/run_grpo_training.sh')
     print()
     print("To use for inference:")
     print(f'  point --checkpoint_dir at "{args.output_dir}" in scripts/inference_tsllm.sh')

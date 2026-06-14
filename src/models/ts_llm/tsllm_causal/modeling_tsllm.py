@@ -1300,11 +1300,25 @@ class TSLLMForCausalLM(nn.Module, SupportsMultiModal):
     # -- DS checkpoint loading --
 
     def _load_ts_checkpoint(self, checkpoint_dir, tag):
-        """Load ts_encoder, align_layer, and cache LoRA from a DeepSpeed checkpoint."""
-        from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
+        """Load ts_encoder, align_layer, and cache LoRA from a checkpoint.
 
-        print(f"Loading DS checkpoint: {checkpoint_dir}, tag={tag}")
-        sd = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir, tag=tag)
+        Accepts either a consolidated <tag>/pytorch_model.pt or a DeepSpeed
+        Zero-3 shard dir.
+        """
+        import os
+
+        consolidated_pt = os.path.join(checkpoint_dir, tag, "pytorch_model.pt")
+        if os.path.isfile(consolidated_pt):
+            print(f"Loading consolidated checkpoint: {consolidated_pt}")
+            sd = torch.load(consolidated_pt, map_location="cpu", weights_only=True)
+        else:
+            from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
+            print(f"Loading DS Zero shard checkpoint: {checkpoint_dir}, tag={tag}")
+            sd = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir, tag=tag)
+
+        # Strip any leading "module." prefix.
+        sd = {k[len("module."):] if k.startswith("module.") else k: v
+              for k, v in sd.items()}
 
         ts_state = {
             k.replace("ts_encoder.", "", 1): v

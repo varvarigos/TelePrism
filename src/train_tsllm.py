@@ -100,7 +100,12 @@ def evaluate(val_loader, full_model, args, tokenizer, ds_config, epoch, evaluato
     if hasattr(val_loader, "sampler") and hasattr(val_loader.sampler, "set_epoch"):
         val_loader.sampler.set_epoch(epoch)
 
-    for batch in tqdm(val_loader, desc=f"Running {evaluator_name}...", total=len(val_loader)):
+    max_eval_batches = getattr(args, "max_eval_batches", None)
+    for batch_idx, batch in enumerate(
+        tqdm(val_loader, desc=f"Running {evaluator_name}...", total=len(val_loader))
+    ):
+        if max_eval_batches is not None and batch_idx >= max_eval_batches:
+            break
         with torch.amp.autocast(device_type=args.device.type, dtype=dtype, enabled=True):
             # Preprocess time series the same way as training
             ts = batch.timeseries
@@ -421,15 +426,48 @@ def train(args: dict, ds_config: dict) -> None:
             config_params=ds_config,
         )
 
+        # Resume trainable weights from a checkpoint (consolidated pytorch_model.pt
+        # or a legacy DeepSpeed shard dir). GatheredParameters(modifier_rank=0)
+        # sets each param correctly under Zero-3. Frozen base weights are skipped
+        # (identical to the HF download already loaded by from_pretrained()).
         if args.deepspeed_pretrained["status"] == True:
-            full_model.load_checkpoint(
-                args.deepspeed_pretrained["checkpoint"], 
-                tag=args.deepspeed_pretrained["tag"],
-                load_module_strict=True,
-                load_optimizer_states=False,     # Don't load optimizer state
-                load_lr_scheduler_states=False,  # Don't load scheduler state
-                load_module_only=True            # Only load model weights
-            )
+            ckpt_dir = args.deepspeed_pretrained["checkpoint"]
+            tag = args.deepspeed_pretrained["tag"]
+            consolidated_pt = os.path.join(ckpt_dir, tag, "pytorch_model.pt")
+            if os.path.isfile(consolidated_pt):
+                if args.rank == 0:
+                    print(f"[resume] loading consolidated fp32 checkpoint {consolidated_pt}", flush=True)
+                state_dict = torch.load(consolidated_pt, map_location="cpu", weights_only=True)
+            else:
+                from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
+                if args.rank == 0:
+                    print(f"[resume] consolidating legacy Zero shard checkpoint {ckpt_dir} (tag={tag})", flush=True)
+                state_dict = get_fp32_state_dict_from_zero_checkpoint(ckpt_dir, tag=tag)
+            state_dict = {k[len("module."):] if k.startswith("module.") else k: v
+                          for k, v in state_dict.items()}
+            loaded = 0
+            missing = []
+            skipped_frozen = 0
+            for name, param in full_model.module.named_parameters():
+                if not param.requires_grad:
+                    skipped_frozen += 1
+                    continue
+                if name not in state_dict:
+                    missing.append(name)
+                    continue
+                with deepspeed.zero.GatheredParameters([param], modifier_rank=0):
+                    if args.rank == 0:
+                        param.data.copy_(state_dict[name].to(param.dtype).to(param.device))
+                loaded += 1
+            if args.rank == 0:
+                print(
+                    f"[resume] trainable_loaded={loaded} missing_trainable={len(missing)} "
+                    f"frozen_skipped={skipped_frozen}",
+                    flush=True,
+                )
+                if missing:
+                    print(f"  WARNING: first 5 missing trainable: {missing[:5]}")
+            del state_dict
 
         # Training loop
         micro_loss_accum = 0.0
@@ -535,11 +573,24 @@ def train(args: dict, ds_config: dict) -> None:
                             f"Epoch {epoch}, OptStep {step_id}, Loss: {loss_tensor.item():.4f}"
                         )
 
+                # Debug short-circuit
+                if args.max_steps_per_epoch is not None and (micro_idx + 1) >= args.max_steps_per_epoch:
+                    if args.rank == 0:
+                        tqdm.write(f"[debug] max_steps_per_epoch={args.max_steps_per_epoch} reached, breaking inner loop")
+                    break
+
+
+            # ----------------------------------------------------------
+            # END-OF-EPOCH BOUNDARY (eval + save).
+            # Instrumented heavily because this is where overnight runs
+            # have died. Each step prints a marker on rank 0 so a future
+            # crash log will pinpoint exactly which step blew up.
+            # ----------------------------------------------------------
+            if args.rank == 0:
+                print(f"[boundary] epoch {epoch} inner loop done — starting eval", flush=True)
 
             # Evaluation
             if epoch % args.eval_interval == 0:
-                # ZeRO3 + sparse MoE deadlock fix: force dense routing during
-                # validation so all ranks allgather the same expert parameters.
                 if args.model_name == "teleencoder":
                     full_model.module.ts_encoder.force_dense_eval = True
                 eval_loss = evaluate(
@@ -553,6 +604,9 @@ def train(args: dict, ds_config: dict) -> None:
                 )
                 if args.model_name == "teleencoder":
                     full_model.module.ts_encoder.force_dense_eval = False
+
+                if args.rank == 0:
+                    print(f"[boundary] epoch {epoch} eval done — all_reduce eval_loss", flush=True)
 
                 eval_loss_tensor = torch.tensor(eval_loss.item(), device=args.device)
                 if dist.is_initialized():
@@ -568,33 +622,50 @@ def train(args: dict, ds_config: dict) -> None:
                         ),
                     ]
                 )
+                if args.rank == 0:
+                    print(f"[boundary] epoch {epoch} eval_loss={float(eval_loss_tensor.item()):.4f} logged", flush=True)
 
-
-            # Save checkpoint
+            # Save checkpoint — LOCAL-ONLY save path (replaces the
+            # full_model.save_checkpoint + GatheredParameters chain).
+            #
+            # Why: full_model.save_checkpoint() and the all-params
+            # GatheredParameters trigger big multi-rank NCCL collectives
+            # that have been the source of every overnight SIGSEGV.
+            # safe_get_full_fp32_param is a local-only API that returns
+            # the rank's slice of the fp32 master without any NCCL op.
+            # Only TRAINABLE params are saved (~425M, ~1.7 GB); frozen
+            # Qwen base weights are identical to the HF download and do
+            # not need re-saving.
             if epoch % args.save_interval == 0 or epoch == args.epochs - 1:
-                full_model.save_checkpoint(args.output_model, tag=f"epoch-{epoch}-{micro_idx}")
-
-                with deepspeed.zero.GatheredParameters(
-                    list(full_model.ts_encoder.parameters()), modifier_rank=0
-                ):
+                from deepspeed.utils import safe_get_full_fp32_param
+                save_dir = os.path.join(args.output_model, f"epoch-{epoch}-{micro_idx}")
+                if args.rank == 0:
+                    print(f"[boundary] epoch {epoch} entering save → {save_dir}", flush=True)
+                    os.makedirs(save_dir, exist_ok=True)
+                consolidated = {}
+                saved_n = skipped_frozen = skipped_none = 0
+                for name, param in full_model.module.named_parameters():
+                    if not param.requires_grad:
+                        skipped_frozen += 1
+                        continue
+                    full_param = safe_get_full_fp32_param(param)
+                    if full_param is None:
+                        skipped_none += 1
+                        continue
                     if args.rank == 0:
-                        save_check = f"{args.output_model}/TS_checkpoints/{args.model_name}-{epoch}-{micro_idx}"
-                        os.makedirs(save_check, exist_ok=True)
-                        safetorch.save_file(
-                            full_model.ts_encoder.state_dict(),
-                            os.path.join(save_check, "model.safetensors"),
-                        )
-
-                with deepspeed.zero.GatheredParameters(
-                    list(full_model.align_layer.parameters()), modifier_rank=0
-                ):
-                    if args.rank == 0:
-                        align_check = f"{args.output_model}/TS_checkpoints/align_layer-{epoch}-{micro_idx}"
-                        os.makedirs(align_check, exist_ok=True)
-                        safetorch.save_file(
-                            full_model.align_layer.state_dict(),
-                            os.path.join(align_check, "model.safetensors"),
-                        )
+                        consolidated[name] = full_param.detach().to("cpu").clone()
+                        saved_n += 1
+                if args.rank == 0:
+                    out_path = os.path.join(save_dir, "pytorch_model.pt")
+                    torch.save(consolidated, out_path)
+                    print(
+                        f"[boundary] epoch {epoch} saved {saved_n} trainable params to {out_path} "
+                        f"(skipped_frozen={skipped_frozen} skipped_none={skipped_none})",
+                        flush=True,
+                    )
+                del consolidated
+                if args.rank == 0:
+                    print(f"[boundary] epoch {epoch} save complete — moving to next epoch", flush=True)
 
     finally:
         cleanup()
@@ -607,14 +678,21 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--llm_model", type=str, default="Qwen/Qwen3-4B")
     parser.add_argument(
-        "--output_model", type=str, default="./checkpoints/cold_start"
+        "--output_model", type=str, default="/data/andreas/ChronoSense_Experiments_LATEST/checkpoints/cold_start"
     )
     parser.add_argument(
         "--batch_size", type=int, default=ds_config["train_micro_batch_size_per_gpu"]
     )
     parser.add_argument("--epochs", type=int, default=60)
+    # Debug knobs (default None = no break) for testing the epoch boundary
+    # without waiting hours per epoch. Set both to small ints (e.g. 5) to
+    # smoke-test save/eval/load across many epoch boundaries quickly.
+    parser.add_argument("--max_steps_per_epoch", type=int, default=None,
+                        help="If set, break the inner training loop after N micro-batches per epoch.")
+    parser.add_argument("--max_eval_batches", type=int, default=None,
+                        help="If set, only run N eval batches per epoch.")
     parser.add_argument("--project_name", type=str, default="TelePrism")
-    parser.add_argument("--lora_r", type=int, default=8)
+    parser.add_argument("--lora_r", type=int, default=16)
     parser.add_argument("--lora_alpha", type=int, default=16)
     parser.add_argument("--lora_dropout", type=float, default=0.05)
     parser.add_argument(

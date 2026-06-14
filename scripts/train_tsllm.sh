@@ -1,6 +1,5 @@
 #!/bin/bash
 set -e
-source .venv/bin/activate
 
 # Cold-start SFT of TelePrism (TeleEncoder + Qwen3-4B) with DeepSpeed Zero-3 + LoRA.
 
@@ -16,7 +15,7 @@ if command -v g++-11 >/dev/null 2>&1; then
     export CXX=g++-11
 fi
 
-deepspeed --include localhost:0,1 src/train_tsllm.py \
+deepspeed src/train_tsllm.py \
     --deepspeed_config configs/ds_conf.json \
     --llm_model Qwen/Qwen3-4B \
     --lora_r 16 \

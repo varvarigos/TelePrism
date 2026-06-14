@@ -7,35 +7,39 @@ encoder: teleencoder # "teleencoder", "toto"
 # Which SFT checkpoint to start RL from. Both are DeepSpeed checkpoints
 # that get "baked" into a single HF model dir before training.
 #
-#   "cold_start"  →  Reasoning-trained (CoT/thinking) checkpoint.
-#                    Best for tasks where the model already has ~60%+ accuracy.
+#   "cold_start"  →  Reasoning-trained (thinking) checkpoint.
 #   "base"        →  Base SFT checkpoint (no reasoning traces).
-#                    Use when starting RL without prior CoT training.
+#                    Use when starting RL without prior reasoning-enabled training.
 #
 starting_model: cold_start   # "cold_start" or "base"
 
 checkpoints:
   cold_start:
     dir: ./checkpoints/cold_start
-    tag: epoch-2-7407
+    tag: epoch-40-6340
+
   base:
     dir: ./checkpoints/sft_base
-    tag: epoch-21-1851
+    tag: epoch-40-6340
 
 # ── LoRA ────────────────────────────────────────────────────────────
 lora:
   enabled: true
-  rank: 128
-  alpha: 128
+  rank: 16
+  alpha: 16
   target_modules: 'q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj'
   exclude_modules: 'embed_tokens|lm_head'
 
 # ── Paths ───────────────────────────────────────────────────────────
 paths:
-  base_dir: .
-  data_dir: ./checkpoints/grpo
-  model_path: ./checkpoints/grpo/model-baked
-  unbaked_model_dir: ./checkpoints/grpo/model-unbaked
+  # Storage root for the whole GRPO run. The launcher derives everything from it:
+  #   <store_dir>/data                            preprocessed TelecomTS QA parquet
+  #   <store_dir>/checkpoints/grpo/model-unbaked  raw Qwen3-4B + TSLLM wiring
+  #   <store_dir>/checkpoints/grpo/model-baked    encoder + LoRA merged in (fed to GRPO)
+  #   <store_dir>/checkpoints/<experiment_name>   trained GRPO weights
+  #   <store_dir>/val/<experiment_name>           validation dumps
+  #   <store_dir>/rollout/<experiment_name>       rollout dumps
+  store_dir: ./experiments/grpo
 
 # ── GPU ─────────────────────────────────────────────────────────────
 gpu:

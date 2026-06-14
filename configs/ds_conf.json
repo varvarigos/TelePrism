@@ -29,7 +29,7 @@
     },
     "gradient_accumulation_steps": 16,
     "gradient_clipping": 1.0,
-    "train_batch_size": 128,
+    "train_batch_size": 256,
     "train_micro_batch_size_per_gpu": 4,
     "activation_checkpointing": {
         "partition_activations": true,

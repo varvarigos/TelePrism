@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import deepspeed
 from transformers import PreTrainedModel, PreTrainedTokenizer
 from typing import Optional, Dict
 
@@ -235,49 +236,56 @@ class FullModel(nn.Module):
 
             # Encode time-series
             if self.ts_encoder is not None:
-                if kwargs['model_name'] == "toto":
-                    timestamp_seconds = torch.zeros(ts.size(0), ts.size(1), ts.size(2), device=ts.device)
-                    time_interval_seconds = torch.full((ts.size(1),), 0.1, device=ts.device)
-                    inputs = MaskedTimeseries(
-                        series=ts,
-                        padding_mask=torch.full_like(ts, True, dtype=torch.bool),
-                        id_mask=torch.zeros_like(ts),
-                        timestamp_seconds=timestamp_seconds,
-                        time_interval_seconds=time_interval_seconds,
-                    )   # torch.Size([B, C, T])
-
-                    ts_embed = self.ts_encoder.get_embeddings(
-                        inputs.series,
-                        inputs.padding_mask,
-                        inputs.id_mask
-                    )   # [B, C, N, P]
-                    ts_embed = ts_embed.contiguous().view(
-                        ts_embed.size(0),
-                        ts_embed.size(1),
-                        ts_embed.size(2) * ts_embed.size(3)
-                    ) # [B, C, N * P]
-
-                elif kwargs['model_name'] == "teleencoder":
-                    ts_embed, _ = self.ts_encoder(ts)        # [B, C, S, d_model]
-                    ts_embed = ts_embed.contiguous().view(
-                        ts_embed.size(0),
-                        ts_embed.size(1),
-                        ts_embed.size(2) * ts_embed.size(3)
-                    )                                        # [B, C, S*d_model]
-
-                elif kwargs['model_name'] == "mantis":
-                    ts_embed = self.ts_encoder.get_embeddings(ts)  # [B, C, num_patches * hidden_dim]
-
-                elif kwargs['model_name'] == "chronos":
-                    ts_embed = self.ts_encoder.get_embeddings(ts)  # [B, C, d_model]
-
-                elif kwargs['model_name'] in (
-                    "autoformer", "fedformer", "informer", "nonstationary_transformer", "timesnet"
+                # Under Zero-3, gather the encoder's params for its forward: some
+                # encoders access weights functionally (e.g. MultiheadAttention's
+                # out_proj), whose per-module gather hooks don't fire during
+                # generate(). No-op when params aren't partitioned.
+                with deepspeed.zero.GatheredParameters(
+                    list(self.ts_encoder.parameters()), modifier_rank=None
                 ):
-                    ts_embed = self.ts_encoder.get_embeddings(ts)  # [B, T, d_model]
+                    if kwargs['model_name'] == "toto":
+                        timestamp_seconds = torch.zeros(ts.size(0), ts.size(1), ts.size(2), device=ts.device)
+                        time_interval_seconds = torch.full((ts.size(1),), 0.1, device=ts.device)
+                        inputs = MaskedTimeseries(
+                            series=ts,
+                            padding_mask=torch.full_like(ts, True, dtype=torch.bool),
+                            id_mask=torch.zeros_like(ts),
+                            timestamp_seconds=timestamp_seconds,
+                            time_interval_seconds=time_interval_seconds,
+                        )   # torch.Size([B, C, T])
 
-                else:
-                    ts_embed = self.ts_encoder(ts)           # [B, L_ts, D_ts]
+                        ts_embed = self.ts_encoder.get_embeddings(
+                            inputs.series,
+                            inputs.padding_mask,
+                            inputs.id_mask
+                        )   # [B, C, N, P]
+                        ts_embed = ts_embed.contiguous().view(
+                            ts_embed.size(0),
+                            ts_embed.size(1),
+                            ts_embed.size(2) * ts_embed.size(3)
+                        ) # [B, C, N * P]
+
+                    elif kwargs['model_name'] == "teleencoder":
+                        ts_embed, _ = self.ts_encoder(ts)        # [B, C, S, d_model]
+                        ts_embed = ts_embed.contiguous().view(
+                            ts_embed.size(0),
+                            ts_embed.size(1),
+                            ts_embed.size(2) * ts_embed.size(3)
+                        )                                        # [B, C, S*d_model]
+
+                    elif kwargs['model_name'] == "mantis":
+                        ts_embed = self.ts_encoder.get_embeddings(ts)  # [B, C, num_patches * hidden_dim]
+
+                    elif kwargs['model_name'] == "chronos":
+                        ts_embed = self.ts_encoder.get_embeddings(ts)  # [B, C, d_model]
+
+                    elif kwargs['model_name'] in (
+                        "autoformer", "fedformer", "informer", "nonstationary_transformer", "timesnet"
+                    ):
+                        ts_embed = self.ts_encoder.get_embeddings(ts)  # [B, T, d_model]
+
+                    else:
+                        ts_embed = self.ts_encoder(ts)           # [B, L_ts, D_ts]
 
                 aligned_embed = self.align_layer(ts_embed)   # [B, L_ts, D_lm]
 

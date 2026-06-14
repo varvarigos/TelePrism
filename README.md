@@ -120,6 +120,22 @@ pip install "git+https://github.com/varvarigos/toto.git@main#egg=toto-ts"
 used directly via `PYTHONPATH` — it is *not* pip-installed. `scripts/run_grpo_training.sh`
 adds it to the path automatically.
 
+### Weights & Biases
+
+All train/eval/inference scripts log to [Weights & Biases](https://wandb.ai).
+Authenticate once before running anything — either log in interactively, or
+export your API key in the shell:
+
+```bash
+# Option A: interactive login (stores credentials in ~/.netrc)
+wandb login
+
+# Option B: export the API key (e.g. add to ~/.bashrc)
+export WANDB_API_KEY=<your-api-key>
+```
+
+To run without logging, set `export WANDB_MODE=offline` (or `disabled`).
+
 ---
 
 ## Dataset

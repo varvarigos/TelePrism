@@ -31,11 +31,13 @@ print(val)
 "; }
 
 # === READ CONFIG ===
-# Paths (BASE_DIR is the repo root = current working directory)
+# Paths. BASE_DIR is the repo root = current working directory.
+# STORE_DIR is the storage root; every run artifact is derived from it.
 BASE_DIR="$(pwd)"
-MNT_DIR=$(yq paths.data_dir)
-MODEL_PATH=$(yq paths.model_path)
-UNBAKED_DIR=$(yq paths.unbaked_model_dir)
+STORE_DIR=$(yq paths.store_dir)
+MODEL_DIR="$STORE_DIR/checkpoints/grpo"        # parent of the baked/unbaked HF model dirs
+UNBAKED_DIR="$MODEL_DIR/model-unbaked"
+MODEL_PATH="$MODEL_DIR/model-baked"
 
 # Starting model
 STARTING_MODEL=$(yq starting_model)
@@ -87,9 +89,9 @@ fi
 
 # Derived paths
 VERL_DIR="$BASE_DIR/src/rl/verl"           # vendored verl (used directly, not pip-installed)
-OUTPUT_DIR="$MNT_DIR/checkpoints/$EXP_NAME"
-VAL_DATA_DIR="$MNT_DIR/val/$EXP_NAME"
-ROLLOUT_DATA_DIR="$MNT_DIR/rollout/$EXP_NAME"
+OUTPUT_DIR="$STORE_DIR/checkpoints/$EXP_NAME"
+VAL_DATA_DIR="$STORE_DIR/val/$EXP_NAME"
+ROLLOUT_DATA_DIR="$STORE_DIR/rollout/$EXP_NAME"
 REWARD_FUNCTION_PATH="$BASE_DIR/src/rl/training/rewards/reward_telecom.py"
 TOKENIZER_DIR="$MODEL_PATH"
 
@@ -150,15 +152,15 @@ rm -rf ~/.cache/huggingface/modules/transformers_modules/tsllm_hyphen_model_hyph
 echo " Synced hf_tsllm.py + cleared HF cache"
 
 # === DATA ===
-TRAIN_FILE="$MNT_DIR/data/telecom_train_grpo.parquet"
-TEST_FILE="$MNT_DIR/data/telecom_test_grpo.parquet"
+TRAIN_FILE="$STORE_DIR/data/telecom_train_grpo.parquet"
+TEST_FILE="$STORE_DIR/data/telecom_test_grpo.parquet"
 
 if [ ! -f "$TRAIN_FILE" ] || [ ! -f "$TEST_FILE" ]; then
     echo "═══════════════════════════════════════════════"
     echo " Data files not found. Running preprocessing..."
     echo "═══════════════════════════════════════════════"
-    python3 -m teleprism.rl.training.preprocessing.preprocess_telecom_data --output_dir "$MNT_DIR/data" --split train
-    python3 -m teleprism.rl.training.preprocessing.preprocess_telecom_data --output_dir "$MNT_DIR/data" --split test
+    python3 -m teleprism.rl.training.preprocessing.preprocess_telecom_data --output_dir "$STORE_DIR/data" --split train
+    python3 -m teleprism.rl.training.preprocessing.preprocess_telecom_data --output_dir "$STORE_DIR/data" --split test
     echo " Data preprocessing complete"
     echo ""
 fi
@@ -261,7 +263,7 @@ python3 -m teleprism.rl.training.main \
     algorithm.use_kl_in_reward=False \
     trainer.critic_warmup=0 \
     trainer.logger='["console","wandb"]' \
-    trainer.project_name='telecom_qa' \
+    trainer.project_name='TelePrism' \
     trainer.experiment_name="$EXP_NAME" \
     trainer.n_gpus_per_node=$NUM_GPUS \
     trainer.nnodes=1 \
