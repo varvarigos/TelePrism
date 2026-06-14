@@ -107,10 +107,10 @@ if _VLLM_AVAILABLE:
         if data is None or (isinstance(data, list) and len(data) == 0):
             return TimeseriesProcessorItems([])
         if isinstance(data, np.ndarray):
-            data = torch.from_numpy(data).float()
+            data = torch.from_numpy(data.copy()).float()
         elif isinstance(data, list):
             data = torch.stack(
-                [torch.from_numpy(d).float() if isinstance(d, np.ndarray) else d.float()
+                [torch.from_numpy(d.copy()).float() if isinstance(d, np.ndarray) else d.float()
                  for d in data]
             )
         if data.dim() == 2:
