@@ -369,6 +369,18 @@ try:
                 inner = inner.base_model.model
             else:
                 break
+        # HF copies the class's defining file, which is a transformers_modules
+        # cache path that can be evicted between load and save. Recreate it from
+        # the installed modeling source so the copy never hits a missing file.
+        try:
+            import inspect, os, shutil
+            src = inspect.getfile(inner.__class__)
+            if not os.path.isfile(src):
+                from teleprism.models.ts_llm.tsllm_causal import modeling_tsllm
+                os.makedirs(os.path.dirname(src), exist_ok=True)
+                shutil.copy(modeling_tsllm.__file__, src)
+        except Exception as _e:
+            print(f"[fsdp_patches] custom_object_save: could not restore module source: {_e}")
         return _orig_custom_object_save(inner, folder, config=config)
 
     _dmu.custom_object_save = _tsllm_custom_object_save
