@@ -28,7 +28,7 @@ gaps that hold back existing time-series + LLM systems:
 Evaluated on the TelecomTS benchmark (7 network-reasoning tasks: `root_cause`,
 `zone`, `anomaly_detection`, `cong` (congestion), `activity`, `motion`,
 `anomaly_bounds`), TelePrism reaches state-of-the-art results across all tasks —
-ahead of multi-modal baselines by ~6 points on average and a text-serialized
+ahead of multi-modal baselines by ~8 points on average and a text-serialized
 variant by 20+ points.
 
 ---
